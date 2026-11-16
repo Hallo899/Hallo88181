@@ -1,0 +1,59 @@
+name: Telegram Test
+on: workflow_dispatch
+permissions: {}
+jobs:
+  push-test:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send test to paired private chat
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import urllib.request
+
+          token = os.environ['BOT_TOKEN']
+          if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]+', token):
+              raise SystemExit('Missing or invalid TELEGRAM_BOT_TOKEN')
+
+          def telegram(method, payload):
+              request = urllib.request.Request(
+                  f'https://api.telegram.org/bot{token}/{method}',
+                  data=json.dumps(payload).encode(),
+                  headers={'Content-Type': 'application/json'},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      body = json.load(response)
+                  if body.get('ok') is True:
+                      return body['result']
+              except Exception:
+                  pass
+              raise SystemExit(f'Telegram request failed: {method}')
+
+          expected = 'd8526a478be5770690ca45be94a7eb42e7b093fd068763f2b7ebc8efeb1553f2'
+          chats = set()
+          for update in telegram('getUpdates', {'allowed_updates': ['message'], 'limit': 100}):
+              msg = update.get('message', {})
+              chat = msg.get('chat', {})
+              if chat.get('type') != 'private':
+                  continue
+              digest = hashlib.sha256(msg.get('text', '').strip().encode()).hexdigest()
+              if digest == expected:
+                  chats.add(chat['id'])
+          if len(chats) != 1:
+              raise SystemExit('Pairing message missing or ambiguous. Send the pairing command again.')
+          chat_id = chats.pop()
+          telegram('sendMessage', {
+              'chat_id': chat_id,
+              'text': f'Schichtalarm: Testnachricht. Telegram-Chat-ID für die Einrichtung: {chat_id}',
+              'disable_notification': False,
+          })
+          print('Telegram accepted the test message.')
+          PY
