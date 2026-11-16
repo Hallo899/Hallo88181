@@ -27,6 +27,21 @@ def classify(text):
 
 
 def notify(message):
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+    if token or chat_id:
+        if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]+', token) or not re.fullmatch(r'[1-9][0-9]*', chat_id):
+            raise ValueError('TELEGRAM_CONFIGURATION')
+        payload = json.dumps({'chat_id': chat_id, 'text': f'Schichtalarm: {message}\n{URL}'}).encode()
+        request = urllib.request.Request(
+            f'https://api.telegram.org/bot{token}/sendMessage', data=payload,
+            headers={'Content-Type': 'application/json'},
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if json.load(response).get('ok') is not True:
+                raise RuntimeError('PUSH_FAILED')
+        return
+
     topic = os.environ['NTFY_TOPIC']
     if not re.fullmatch(r'shift-[a-f0-9]{32,64}', topic):
         raise ValueError('TOPIC_CONFIGURATION')
