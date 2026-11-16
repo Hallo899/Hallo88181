@@ -44,7 +44,8 @@ jobs:
       - name: Check
         env:
           MODE: ${{ inputs.mode || 'check' }}
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_KEY: ${{ secrets.STATE_KEY }}
           FLASCHENPOST_LOGIN: ${{ secrets.FLASCHENPOST_LOGIN }}
           FLASCHENPOST_PASSWORD: ${{ secrets.FLASCHENPOST_PASSWORD }}
