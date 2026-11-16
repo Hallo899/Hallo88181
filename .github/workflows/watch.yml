@@ -1,0 +1,56 @@
+name: Schichtalarm
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Testnachricht, einmal anmelden oder prüfen
+        type: choice
+        options: [notification-test, retry-login, check]
+        default: notification-test
+  schedule:
+    - cron: '2-57/5 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: schichtalarm
+  cancel-in-progress: false
+jobs:
+  check:
+    if: >-
+      github.event.repository.private == false &&
+      (github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+      - name: Browser
+        if: inputs.mode != 'notification-test'
+        run: python -m playwright install --with-deps chromium
+      - uses: actions/cache/restore@v4
+        if: inputs.mode != 'notification-test'
+        with:
+          path: .state/state.enc
+          key: encrypted-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: encrypted-state-v1-
+      - name: Check
+        env:
+          MODE: ${{ inputs.mode || 'check' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          FLASCHENPOST_LOGIN: ${{ secrets.FLASCHENPOST_LOGIN }}
+          FLASCHENPOST_PASSWORD: ${{ secrets.FLASCHENPOST_PASSWORD }}
+        run: python watch.py "$MODE"
+      - uses: actions/cache/save@v4
+        if: always() && inputs.mode != 'notification-test' && hashFiles('.state/state.enc') != ''
+        with:
+          path: .state/state.enc
+          key: encrypted-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
