@@ -16,6 +16,7 @@ jobs:
           import json
           import os
           import re
+          import urllib.error
           import urllib.request
 
           token = os.environ['BOT_TOKEN']
@@ -33,8 +34,10 @@ jobs:
                       body = json.load(response)
                   if body.get('ok') is True:
                       return body['result']
-              except Exception:
-                  pass
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(f"Telegram {method}: HTTP {error.code}") from None
+              except (OSError, ValueError) as error:
+                  raise SystemExit(f"Telegram {method}: {type(error).__name__}") from None
               raise SystemExit(f'Telegram request failed: {method}')
 
           expected = 'd8526a478be5770690ca45be94a7eb42e7b093fd068763f2b7ebc8efeb1553f2'
