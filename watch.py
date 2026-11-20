@@ -78,7 +78,9 @@ def read_view(state, persist):
         context = browser.new_context(storage_state=state.get('session'))
         page = context.new_page()
         page.set_default_timeout(20000)
+        state['stage'] = 'PORTAL_AUFRUF'
         page.goto(URL, wait_until='domcontentloaded', timeout=45000)
+        state['stage'] = 'ANSICHT_LADEN'
         # Wait for either the offers view or the known login form.
         for _ in range(30):
             if page.locator(SELECTOR).is_visible() or page.locator('input[name="loginId"]').is_visible():
@@ -88,6 +90,7 @@ def read_view(state, persist):
             if urlparse(page.url).hostname != 'fauth.flaschenpost.de':
                 raise RuntimeError('LOGIN_ORIGIN')
             # Persist lock BEFORE submitting. Even a failed/aborted run must not retry blindly.
+            state['stage'] = 'ANMELDUNG'
             state['blocked'] = True
             persist()
             page.locator('input[name="loginId"]').fill(os.environ['FLASCHENPOST_LOGIN'])
@@ -96,6 +99,7 @@ def read_view(state, persist):
             page.locator(SELECTOR).wait_for(state='visible', timeout=45000)
             state['blocked'] = False
         page.locator(SELECTOR).wait_for(state='visible')
+        state['stage'] = 'ANGEBOTE_LESEN'
         # Two stable observations reduce notifications caused by loading transitions.
         first = page.locator(SELECTOR).inner_text()
         page.wait_for_timeout(2000)
@@ -129,12 +133,22 @@ def main(mode):
         if state.get('blocked'):
             raise RuntimeError('LOGIN_PAUSED')
         kind, signature = read_view(state, persist)
+        state['stage'] = 'ANGEBOTE_PRUEFEN'
         apply_observation(state, kind, signature, notify)
+        if state.get('error_at'):
+            state['stage'] = 'ENTWARNUNG_SENDEN'
+            notify('Die Schichtprüfung funktioniert wieder. Die letzte Portalabfrage war erfolgreich.')
         state.pop('error_at', None)
         print('CHECK_OK_' + kind.upper())
-    except Exception:
+    except Exception as error:
+        stage = state.get('stage', 'VORBEREITUNG')
+        print(f'CHECK_FAILED_STAGE={stage} TYPE={type(error).__name__}')
         if time.time() - state.get('error_at', 0) > 86400:
-            notify('Schichtprüfung gestört oder Anmeldung pausiert. Bitte GitHub Actions prüfen. Keine zuverlässige Überwachung bis zur Behebung.')
+            if state.get('blocked'):
+                message = 'Die automatische Anmeldung ist pausiert. Bitte GitHub Actions prüfen.'
+            else:
+                message = 'Die letzte Schichtprüfung ist fehlgeschlagen. Der nächste geplante Lauf versucht es erneut.'
+            notify(f'{message} Schritt: {stage}. Bis zur nächsten erfolgreichen Prüfung können Angebote übersehen werden.')
             state['error_at'] = time.time()
         raise
     finally:
