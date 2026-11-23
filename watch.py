@@ -132,7 +132,19 @@ def main(mode):
     try:
         if state.get('blocked'):
             raise RuntimeError('LOGIN_PAUSED')
-        kind, signature = read_view(state, persist)
+        # Retry one transient page-load timeout with the existing saved session.
+        # Never repeat a submitted login or retry an unrecognized offer view.
+        from playwright.sync_api import TimeoutError as PageTimeout
+        for attempt in range(2):
+            try:
+                kind, signature = read_view(state, persist)
+                break
+            except PageTimeout:
+                if (attempt or state.get('blocked') or
+                        state.get('stage') not in {'PORTAL_AUFRUF', 'ANSICHT_LADEN'}):
+                    raise
+                print('PAGE_LOAD_RETRY')
+                time.sleep(3)
         state['stage'] = 'ANGEBOTE_PRUEFEN'
         apply_observation(state, kind, signature, notify)
         if state.get('error_at'):
